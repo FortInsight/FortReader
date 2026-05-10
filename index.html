@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EchoReader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="theme-dark">
+    <div class="ambient ambient-left"></div>
+    <div class="ambient ambient-right"></div>
+
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Document to Speech Studio</p>
+          <h1>Upload a document, turn it into text, and listen with precision.</h1>
+        </div>
+
+        <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+          <span class="theme-dot"></span>
+          <span id="themeLabel">Dark Mode</span>
+        </button>
+      </section>
+
+      <section class="layout">
+        <aside class="panel upload-panel">
+          <div class="panel-header">
+            <h2>Import</h2>
+            <p>Supports PDF, DOCX, TXT, HTML, MD, and other text-based files.</p>
+          </div>
+
+          <label id="dropzone" class="dropzone" for="fileInput">
+            <input id="fileInput" type="file" accept=".pdf,.doc,.docx,.txt,.rtf,.odt,.md,.html,.htm" />
+            <span class="dropzone-badge">Drop file</span>
+            <strong>Select a document</strong>
+            <span>or drag it here to extract readable text</span>
+          </label>
+
+          <div class="action-row">
+            <button id="convertBtn" class="control delete-btn" type="button" disabled>Convert to text</button>
+          </div>
+
+          <div class="paste-card">
+            <div class="paste-header">
+              <div>
+                <p class="meta-label">Paste text</p>
+                <p class="paste-copy">Paste plain text by default. Turn on HTML mode only when you want HTML rendered.</p>
+              </div>
+              <div class="paste-actions">
+                <button id="pasteBtn" class="control paste-btn" type="button">Read pasted text</button>
+                <button id="explainPasteBtn" class="control paste-btn" type="button">Explain pasted text</button>
+                <button id="summarizePasteBtn" class="control paste-btn" type="button">Summarize pasted text</button>
+                <button id="savePasteBtn" class="control paste-btn" type="button">Save pasted text</button>
+              </div>
+            </div>
+            <input
+              id="pasteTitleInput"
+              class="paste-title-input"
+              type="text"
+              placeholder="Optional saved title, for example Week 3 notes"
+            />
+            <label class="html-toggle">
+              <input id="htmlModeToggle" type="checkbox" />
+              <span>Use HTML mode</span>
+            </label>
+            <textarea
+              id="pasteInput"
+              class="paste-input"
+              placeholder="Paste plain text here. Turn on HTML mode if you want tags rendered."
+            ></textarea>
+          </div>
+
+          <div class="saved-card">
+            <div class="saved-header">
+              <div>
+                <p class="meta-label">Saved texts</p>
+                <p class="paste-copy">Keep pasted text here and reopen it later with your saved reading position.</p>
+              </div>
+            </div>
+            <div id="savedList" class="saved-list">
+              <p class="saved-empty">No saved pasted texts yet.</p>
+            </div>
+          </div>
+
+          <div class="meta-card">
+            <div>
+              <p class="meta-label">Current file</p>
+              <p id="fileName" class="meta-value">None loaded</p>
+            </div>
+            <div>
+              <p class="meta-label">Words</p>
+              <p id="wordCount" class="meta-value">0</p>
+            </div>
+          </div>
+
+          <div class="action-row">
+            <button id="deleteBtn" class="control delete-btn" type="button">Delete document</button>
+          </div>
+
+          <div class="status-card">
+            <p class="meta-label">Status</p>
+            <p id="statusText" class="status-text">Waiting for a document.</p>
+          </div>
+
+          <div class="tips-card">
+            <p class="meta-label">Tips</p>
+            <ul>
+              <li>PDF text is extracted in-browser.</li>
+              <li>DOCX files are converted to readable plain text.</li>
+              <li>Older `.doc` files may need saving as `.docx` first.</li>
+            </ul>
+          </div>
+        </aside>
+
+        <section class="panel reader-panel">
+          <div id="readerToolbar" class="reader-toolbar">
+            <div class="toolbar-top">
+              <div class="transport">
+                <button id="rewindBtn" class="control" type="button">Rewind</button>
+                <button id="playBtn" class="control primary" type="button">Play</button>
+                <button id="pauseBtn" class="control" type="button">Pause</button>
+                <button id="resumeBtn" class="control" type="button">Resume</button>
+                <button id="stopBtn" class="control" type="button">Stop</button>
+                <button id="forwardBtn" class="control" type="button">Fast Forward</button>
+              </div>
+
+              <div class="toolbar-actions">
+                <button id="recenterBtn" class="control" type="button">Recenter highlight</button>
+                <button id="toggleToolbarBtn" class="control" type="button">Hide controls</button>
+                <button id="focusModeBtn" class="control" type="button">Focus mode</button>
+              </div>
+            </div>
+
+            <div id="toolbarBody" class="toolbar-body">
+              <div class="reader-settings">
+                <div class="voice-wrap">
+                  <label for="voiceSelect">Voice</label>
+                  <select id="voiceSelect" class="voice-select"></select>
+                </div>
+
+                <div class="speed-wrap">
+                  <label for="speedRange">Reading speed</label>
+                  <div class="speed-row">
+                    <input id="speedRange" type="range" min="0.6" max="2" step="0.1" value="1" />
+                    <span id="speedValue">1.0x</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="progress-card">
+                <div class="progress-copy">
+                  <div>
+                    <p class="meta-label">Progress</p>
+                    <p id="progressValue" class="progress-value">0%</p>
+                  </div>
+                  <div>
+                    <p class="meta-label">Highlighted chunk</p>
+                    <p id="chunkValue" class="progress-value progress-small">0 / 0</p>
+                  </div>
+                </div>
+
+                <div class="time-copy">
+                  <div>
+                    <p class="meta-label">Total time</p>
+                    <p id="totalTimeValue" class="progress-value progress-small">0m</p>
+                  </div>
+                  <div>
+                    <p class="meta-label">Done</p>
+                    <p id="doneTimeValue" class="progress-value progress-small">0m</p>
+                  </div>
+                  <div>
+                    <p class="meta-label">Left</p>
+                    <p id="leftTimeValue" class="progress-value progress-small">0m</p>
+                  </div>
+                </div>
+
+                <div class="meter-wrap">
+                  <div class="meter" aria-hidden="true">
+                    <div id="meterFill" class="meter-fill"></div>
+                  </div>
+                  <input id="progressRange" class="progress-range" type="range" min="0" max="100" step="1" value="0" />
+                </div>
+              </div>
+              <div class="reader-style-card">
+                <div class="reader-style-grid">
+                  <div class="font-wrap">
+                    <label for="fontSelect">Type</label>
+                    <select id="fontSelect" class="voice-select">
+                      <option value="space">Space Grotesk</option>
+                      <option value="serif">Instrument Serif</option>
+                      <option value="georgia">Georgia</option>
+                      <option value="verdana">Verdana</option>
+                      <option value="courier">Courier New</option>
+                    </select>
+                  </div>
+
+                  <div class="font-size-wrap">
+                    <label for="fontSizeRange">Text size</label>
+                    <div class="speed-row">
+                      <input id="fontSizeRange" type="range" min="16" max="30" step="1" value="17" />
+                      <span id="fontSizeValue">17px</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="reader-header">
+            <div>
+              <p class="meta-label">Reader text</p>
+              <h2>Live highlighted transcript</h2>
+            </div>
+          </div>
+
+          <article id="textViewer" class="text-viewer">
+            <p class="placeholder">
+              Your extracted text will appear here. Press Play to hear it read aloud with synced
+              highlighting.
+            </p>
+          </article>
+
+        </section>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
