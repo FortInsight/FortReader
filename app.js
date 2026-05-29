@@ -1,4 +1,3 @@
-const fileInput = document.getElementById("fileInput");
 const fileNameEl = document.getElementById("fileName");
 const wordCountEl = document.getElementById("wordCount");
 const statusText = document.getElementById("statusText");
@@ -20,15 +19,12 @@ const meterFill = document.getElementById("meterFill");
 const progressRange = document.getElementById("progressRange");
 const themeToggle = document.getElementById("themeToggle");
 const themeLabel = document.getElementById("themeLabel");
-const dropzone = document.getElementById("dropzone");
-const convertBtn = document.getElementById("convertBtn");
 const pasteInput = document.getElementById("pasteInput");
 const pasteBtn = document.getElementById("pasteBtn");
 const explainPasteBtn = document.getElementById("explainPasteBtn");
 const summarizePasteBtn = document.getElementById("summarizePasteBtn");
 const savePasteBtn = document.getElementById("savePasteBtn");
 const pasteTitleInput = document.getElementById("pasteTitleInput");
-const htmlModeToggle = document.getElementById("htmlModeToggle");
 const deleteBtn = document.getElementById("deleteBtn");
 const savedList = document.getElementById("savedList");
 const readerToolbar = document.getElementById("readerToolbar");
@@ -54,13 +50,12 @@ let playbackWordIndex = 0;
 let isReading = false;
 let lastVisibleChunkIndex = -1;
 let isToolbarCollapsed = false;
-let pendingFile = null;
-let pdfSupportPromise = null;
-let ocrSupportPromise = null;
 let wasReadingBeforeSeek = false;
 let currentSavedDocumentId = "";
 let savedTexts = loadSavedTexts();
 let readerPreferences = loadReaderPreferences();
+let scrollAnimationFrame = 0;
+let targetViewerScrollTop = 0;
 
 applySavedPreferences();
 populateVoices();
@@ -73,55 +68,9 @@ if ("onvoiceschanged" in speechSynthesis) {
   };
 }
 
-fileInput.addEventListener("change", (event) => {
-  const [file] = event.target.files;
-  if (file) {
-    pendingFile = file;
-    fileNameEl.textContent = file.name;
-    wordCountEl.textContent = "Pending";
-    convertBtn.disabled = false;
-    updateStatus("File uploaded. Click Convert to text.");
-  }
-});
-
-["dragenter", "dragover"].forEach((eventName) => {
-  dropzone.addEventListener(eventName, (event) => {
-    event.preventDefault();
-    dropzone.classList.add("is-dragover");
-  });
-});
-
-["dragleave", "drop"].forEach((eventName) => {
-  dropzone.addEventListener(eventName, (event) => {
-    event.preventDefault();
-    dropzone.classList.remove("is-dragover");
-  });
-});
-
-dropzone.addEventListener("drop", (event) => {
-  const [file] = event.dataTransfer?.files || [];
-  if (file) {
-    pendingFile = file;
-    fileNameEl.textContent = file.name;
-    wordCountEl.textContent = "Pending";
-    convertBtn.disabled = false;
-    updateStatus("File uploaded. Click Convert to text.");
-  }
-});
-
-convertBtn.addEventListener("click", async () => {
-  if (!pendingFile) {
-    updateStatus("Upload a document first, then convert it to text.");
-    return;
-  }
-
-  convertBtn.disabled = true;
-  await handleFile(pendingFile);
-});
-
 playBtn.addEventListener("click", () => {
   if (!chunks.length) {
-    updateStatus("Upload a supported document before starting playback.");
+    updateStatus("Paste some text before starting playback.");
     return;
   }
 
@@ -185,7 +134,7 @@ savePasteBtn.addEventListener("click", () => {
     return;
   }
 
-  const savedItem = savePastedText(raw, htmlModeToggle.checked, pasteTitleInput.value.trim());
+  const savedItem = savePastedText(raw, pasteTitleInput.value.trim());
   renderSavedTexts();
 
   stopReading();
@@ -253,10 +202,6 @@ themeToggle.addEventListener("click", () => {
   saveReaderPreference("theme", nextTheme);
 });
 
-htmlModeToggle.addEventListener("change", () => {
-  saveReaderPreference("htmlMode", htmlModeToggle.checked);
-});
-
 voiceSelect.addEventListener("change", () => {
   saveReaderPreference("voice", voiceSelect.value);
 });
@@ -289,29 +234,26 @@ function updateStatus(message) {
 function loadPastedContent(mode) {
   const raw = pasteInput.value.trim();
   if (!raw) {
-    updateStatus("Paste HTML or text into the box first.");
+    updateStatus("Paste text into the box first.");
     return;
   }
 
   stopReading();
-  const useHtmlMode = htmlModeToggle.checked;
-  const plainText = cleanText(useHtmlMode ? decodeHtmlToText(raw) : raw);
+  const plainText = cleanText(raw);
   const transformed = transformPastedText(plainText, mode);
   const labelMap = {
-    read: useHtmlMode ? "Pasted HTML" : "Pasted Text",
+    read: "Pasted Text",
     explain: "Explanation",
     summarize: "Summary"
   };
   const statusMap = {
-    read: useHtmlMode
-      ? "HTML content loaded and converted to readable text."
-      : "Plain text loaded for reading.",
+    read: "Plain text loaded for reading.",
     explain: "Pasted text explained in simpler language.",
     summarize: "Pasted text summarized."
   };
 
   setDocumentText(transformed, {
-    sourceType: useHtmlMode ? "html" : "text",
+    sourceType: "text",
     sourceLabel: labelMap[mode] || "Pasted Text",
     savedDocumentId: ""
   });
@@ -364,71 +306,6 @@ function applySavedPreferences() {
     fontSelect.value = readerPreferences.font;
   }
 
-  if (typeof readerPreferences.htmlMode === "boolean") {
-    htmlModeToggle.checked = readerPreferences.htmlMode;
-  }
-}
-
-async function ensurePdfSupport() {
-  if (!pdfSupportPromise) {
-    pdfSupportPromise = (async () => {
-      try {
-        const pdfjsModule = await import("./vendor/pdf.min.mjs");
-        window.pdfjsLib = pdfjsModule;
-        window.__PDF_WORKER_SRC__ = "./vendor/pdf.worker.min.mjs";
-      } catch (error) {
-        console.error("Local PDF support failed to load.", error);
-      }
-    })();
-  }
-
-  await pdfSupportPromise;
-
-  if (window.pdfjsLib && window.__PDF_WORKER_SRC__) {
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc = window.__PDF_WORKER_SRC__;
-  }
-}
-
-async function ensureOcrSupport() {
-  if (!ocrSupportPromise) {
-    ocrSupportPromise = (async () => {
-      try {
-        const tesseractModule = await import("./vendor/tesseract.esm.min.js");
-        window.Tesseract = tesseractModule.default;
-      } catch (error) {
-        console.error("Local OCR support failed to load.", error);
-      }
-    })();
-  }
-
-  await ocrSupportPromise;
-}
-
-async function handleFile(file) {
-  stopReading();
-  currentSavedDocumentId = "";
-  updateStatus(`Loading ${file.name}...`);
-  wordCountEl.textContent = "Converting";
-
-  try {
-    const result = await extractText(file);
-    setDocumentText(result.text, {
-      sourceType: result.sourceType,
-      sourceLabel: file.name,
-      savedDocumentId: ""
-    });
-    updateStatus("Text extracted. Press Play to start reading.");
-  } catch (error) {
-    console.error(error);
-    clearReader(error.message || "No readable text found in that file.");
-    fileNameEl.textContent = file.name;
-    wordCountEl.textContent = "No text";
-    updateStatus(error.message || "Could not extract text from this file.");
-  } finally {
-    fileInput.value = "";
-    pendingFile = null;
-    convertBtn.disabled = true;
-  }
 }
 
 function setDocumentText(text, options = {}) {
@@ -460,6 +337,7 @@ function setDocumentText(text, options = {}) {
 function cleanText(text) {
   return text
     .replace(/([A-Za-z])-\s+([A-Za-z])/g, "$1$2")
+    .replace(/^[ \t]*[*-][ \t]+/gm, "• ")
     .replace(/\r/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
@@ -579,8 +457,10 @@ function highlightChunk(index, wordIndex, forceCenter = false) {
   const active = textViewer.querySelector(`[data-index="${index}"]`);
   if (active) {
     active.classList.add("is-active");
-    if (lastVisibleChunkIndex !== index || forceCenter) {
+    if (forceCenter) {
       keepChunkInView(active, forceCenter);
+      lastVisibleChunkIndex = index;
+    } else if (lastVisibleChunkIndex !== index) {
       lastVisibleChunkIndex = index;
     }
   }
@@ -614,101 +494,6 @@ function stopReading() {
   persistSavedProgress();
 }
 
-async function extractText(file) {
-  const lowerName = file.name.toLowerCase();
-
-  if (lowerName.endsWith(".pdf")) {
-    return extractPdfText(file);
-  }
-
-  if (lowerName.endsWith(".docx")) {
-    return extractDocxText(file);
-  }
-
-  if (/\.(txt|md|html|htm|rtf|odt)$/i.test(lowerName) || file.type.startsWith("text/")) {
-    const rawText = await file.text();
-    if (lowerName.endsWith(".html") || lowerName.endsWith(".htm")) {
-      return {
-        text: decodeHtmlToText(rawText),
-        sourceType: "html"
-      };
-    }
-
-    return {
-      text: rawText,
-      sourceType: "text"
-    };
-  }
-
-  if (lowerName.endsWith(".doc")) {
-    throw new Error("Older .doc files are not reliably readable in-browser. Please save as .docx.");
-  }
-
-  throw new Error("Unsupported file type. Try PDF, DOCX, TXT, MD, HTML, or another text-based file.");
-}
-
-async function extractPdfText(file) {
-  await ensurePdfSupport();
-
-  if (!window.pdfjsLib) {
-    throw new Error("PDF support did not load.");
-  }
-
-  const buffer = await file.arrayBuffer();
-  const pdf = await window.pdfjsLib.getDocument({ data: buffer }).promise;
-  const pages = [];
-
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const content = await page.getTextContent();
-    const pageText = content.items.map((item) => item.str).join(" ");
-    pages.push(pageText);
-  }
-
-  const extracted = pages.join("\n\n").trim();
-  if (extracted) {
-    return {
-      text: extracted,
-      sourceType: "pdf"
-    };
-  }
-
-  updateStatus("No selectable PDF text found. Starting OCR...");
-  const ocrText = await extractPdfTextWithOcr(pdf);
-
-  if (!ocrText.trim()) {
-    throw new Error("PDF loaded, but OCR could not find readable text. The scan quality may be too low.");
-  }
-
-  return {
-    text: ocrText,
-    sourceType: "pdf"
-  };
-}
-
-async function extractDocxText(file) {
-  if (!window.mammoth) {
-    throw new Error("DOCX support did not load.");
-  }
-
-  const buffer = await file.arrayBuffer();
-  const result = await window.mammoth.extractRawText({ arrayBuffer: buffer });
-  return {
-    text: result.value,
-    sourceType: "docx"
-  };
-}
-
-function decodeHtmlToText(value) {
-  if (!value.includes("<") || !value.includes(">")) {
-    return value;
-  }
-
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(value, "text/html");
-  return doc.body?.textContent || "";
-}
-
 function escapeHtml(value) {
   return value
     .replaceAll("&", "&amp;")
@@ -737,11 +522,8 @@ function clearReader(message = "No readable text found in that file.") {
 
 function resetDocument() {
   stopReading();
-  fileInput.value = "";
   pasteInput.value = "";
   pasteTitleInput.value = "";
-  pendingFile = null;
-  convertBtn.disabled = true;
   fileNameEl.textContent = "None loaded";
   wordCountEl.textContent = "0";
   clearReader();
@@ -836,7 +618,7 @@ function startReadingFromSelection(chunkIndex, wordIndex) {
 
 function shiftReadingPosition(direction) {
   if (!chunks.length) {
-    updateStatus("Upload a supported document before moving through the document.");
+    updateStatus("Paste some text before moving through it.");
     return;
   }
 
@@ -883,11 +665,14 @@ function keepChunkInView(element, forceCenter = false) {
 
 function centerElementInView(element) {
   requestAnimationFrame(() => {
-    element.scrollIntoView({
-      behavior: "auto",
-      block: "center",
-      inline: "nearest"
-    });
+    const containerRect = textViewer.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
+    const delta =
+      elementRect.top -
+      containerRect.top -
+      containerRect.height / 2 +
+      elementRect.height / 2;
+    animateViewerScrollTo(textViewer.scrollTop + delta);
   });
 }
 
@@ -895,76 +680,44 @@ function keepWordInView(element) {
   requestAnimationFrame(() => {
     const containerRect = textViewer.getBoundingClientRect();
     const elementRect = element.getBoundingClientRect();
-    const topPadding = 120;
-    const bottomPadding = 150;
-    const topLimit = containerRect.top + topPadding;
-    const bottomLimit = containerRect.bottom - bottomPadding;
+    const preferredTop = containerRect.top + containerRect.height * 0.38;
+    const preferredBottom = containerRect.top + containerRect.height * 0.7;
+    const wordCenter = elementRect.top + elementRect.height / 2;
 
-    if (elementRect.top < topLimit) {
-      element.scrollIntoView({
-        behavior: "auto",
-        block: "start",
-        inline: "nearest"
-      });
+    if (wordCenter < preferredTop) {
+      animateViewerScrollTo(textViewer.scrollTop - (preferredTop - wordCenter));
       return;
     }
 
-    if (elementRect.bottom > bottomLimit) {
-      element.scrollIntoView({
-        behavior: "auto",
-        block: "end",
-        inline: "nearest"
-      });
+    if (wordCenter > preferredBottom) {
+      animateViewerScrollTo(textViewer.scrollTop + (wordCenter - preferredBottom));
     }
   });
 }
 
-async function extractPdfTextWithOcr(pdf) {
-  await ensureOcrSupport();
+function animateViewerScrollTo(nextTop) {
+  const maxScrollTop = Math.max(textViewer.scrollHeight - textViewer.clientHeight, 0);
+  targetViewerScrollTop = Math.max(0, Math.min(nextTop, maxScrollTop));
 
-  if (!window.Tesseract) {
-    throw new Error("OCR support did not load.");
+  if (scrollAnimationFrame) {
+    return;
   }
 
-  const totalPages = pdf.numPages;
-  const pages = [];
-  const worker = await window.Tesseract.createWorker("eng", 1, {
-    workerPath: "./vendor/worker.min.js",
-    corePath: "./vendor/tesseract-core",
-    langPath: "./vendor/tessdata/",
-    logger: (message) => {
-      if (message.status === "recognizing text" && typeof message.progress === "number") {
-        const percent = Math.round(message.progress * 100);
-        updateStatus(`Running OCR... ${percent}%`);
-      }
+  const step = () => {
+    const currentTop = textViewer.scrollTop;
+    const delta = targetViewerScrollTop - currentTop;
+
+    if (Math.abs(delta) < 1) {
+      textViewer.scrollTop = targetViewerScrollTop;
+      scrollAnimationFrame = 0;
+      return;
     }
-  });
 
-  try {
-    for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
-      updateStatus(`Running OCR on page ${pageNumber} of ${totalPages}...`);
-      const page = await pdf.getPage(pageNumber);
-      const viewport = page.getViewport({ scale: 2 });
-      const canvas = document.createElement("canvas");
-      const context = canvas.getContext("2d", { willReadFrequently: true });
+    textViewer.scrollTop = currentTop + delta * 0.12;
+    scrollAnimationFrame = requestAnimationFrame(step);
+  };
 
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-
-      await page.render({
-        canvasContext: context,
-        viewport
-      }).promise;
-
-      const result = await worker.recognize(canvas);
-      pages.push(result.data.text || "");
-    }
-  } finally {
-    await worker.terminate();
-  }
-
-  updateStatus("OCR complete. Preparing text for reading...");
-  return pages.join("\n\n").trim();
+  scrollAnimationFrame = requestAnimationFrame(step);
 }
 
 function populateVoices() {
@@ -1185,6 +938,8 @@ function applyReaderStyle() {
 
 function normalizeSpeechText(text) {
   return text
+    .replace(/^[ \t]*[•][ \t]*/gm, "List item: ")
+    .replace(/^[ \t]*[*-][ \t]+/gm, "List item: ")
     .replace(/\be\.\s*g\./gi, "for example")
     .replace(/\bi\.\s*e\./gi, "that is")
     .replace(/\betc\./gi, "etcetera");
@@ -1384,9 +1139,9 @@ function persistSavedTexts() {
   window.localStorage.setItem(SAVED_TEXTS_KEY, JSON.stringify(savedTexts));
 }
 
-function savePastedText(rawText, useHtmlMode, customTitle) {
+function savePastedText(rawText, customTitle) {
   const normalizedRawText = rawText.trim();
-  const plainText = useHtmlMode ? decodeHtmlToText(normalizedRawText) : normalizedRawText;
+  const plainText = normalizedRawText;
   const title = customTitle || createSavedTitle(plainText);
   const now = new Date().toISOString();
 
@@ -1394,7 +1149,7 @@ function savePastedText(rawText, useHtmlMode, customTitle) {
     id: `saved-${Date.now()}`,
     title,
     rawText: normalizedRawText,
-    mode: useHtmlMode ? "html" : "text",
+    mode: "text",
     updatedAt: now,
     wordCount: plainText.trim() ? plainText.trim().split(/\s+/).length : 0,
     progress: {
@@ -1450,9 +1205,8 @@ function openSavedText(id) {
   stopReading();
   pasteInput.value = savedItem.rawText;
   pasteTitleInput.value = savedItem.title;
-  htmlModeToggle.checked = savedItem.mode === "html";
   setDocumentText(getPlainTextForSavedItem(savedItem), {
-    sourceType: savedItem.mode,
+    sourceType: "text",
     sourceLabel: savedItem.title,
     savedDocumentId: savedItem.id,
     savedProgress: savedItem.progress
@@ -1526,7 +1280,7 @@ function calculateSavedPercent(item) {
 }
 
 function getPlainTextForSavedItem(item) {
-  return item.mode === "html" ? decodeHtmlToText(item.rawText) : item.rawText;
+  return item.rawText;
 }
 
 function createSavedTitle(text) {

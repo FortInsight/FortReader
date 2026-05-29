@@ -1,15 +1,15 @@
 :root {
-  --bg: #10131a;
-  --bg-elevated: rgba(19, 24, 35, 0.82);
-  --bg-soft: rgba(255, 255, 255, 0.06);
-  --text: #edf2ff;
-  --muted: #b2bdd7;
+  --bg: #061226;
+  --bg-elevated: #0d1b34;
+  --bg-soft: rgba(255, 255, 255, 0.08);
+  --text: #ffffff;
+  --muted: #d5def5;
   --line: rgba(255, 255, 255, 0.1);
-  --accent: #7cf7c7;
-  --accent-strong: #37d6b0;
-  --accent-warm: #ffc670;
+  --accent: #82adff;
+  --accent-strong: #4e7fff;
+  --accent-warm: #9bd2ff;
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
-  --highlight: rgba(124, 247, 199, 0.22);
+  --highlight: rgba(130, 173, 255, 0.24);
   --select-bg: #ffffff;
   --select-text: #111111;
 }
@@ -38,22 +38,13 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: "Space Grotesk", sans-serif;
-  background:
-    radial-gradient(circle at top left, rgba(255, 198, 112, 0.16), transparent 28%),
-    radial-gradient(circle at 80% 20%, rgba(124, 247, 199, 0.17), transparent 24%),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   overflow-x: hidden;
 }
 
 .ambient {
-  position: fixed;
-  width: 28rem;
-  height: 28rem;
-  border-radius: 50%;
-  filter: blur(90px);
-  opacity: 0.3;
-  pointer-events: none;
+  display: none;
 }
 
 .ambient-left {
@@ -139,7 +130,6 @@ h2 {
   background: var(--bg-elevated);
   border: 1px solid var(--line);
   border-radius: 28px;
-  backdrop-filter: blur(18px);
   box-shadow: var(--shadow);
 }
 
@@ -402,8 +392,7 @@ li {
   padding: 1rem;
   border: 1px solid var(--line);
   border-radius: 24px;
-  background: rgba(16, 19, 26, 0.88);
-  backdrop-filter: blur(18px);
+  background: var(--bg-elevated);
 }
 
 body.theme-light .reader-toolbar {
@@ -564,9 +553,7 @@ body.theme-light .reader-toolbar {
   padding: 1.2rem;
   border-radius: 24px;
   border: 1px solid var(--line);
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02)),
-    rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.02);
   line-height: 1.9;
   font-size: var(--reader-font-size, 17px);
   font-family: var(--reader-font-family, "Space Grotesk", sans-serif);
@@ -576,12 +563,13 @@ body.theme-light .reader-toolbar {
   display: inline;
   padding: 0.1rem 0.22rem;
   border-radius: 0.45rem;
-  transition: background 140ms ease, color 140ms ease;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
 }
 
 .viewer-line.is-active {
-  background: var(--highlight);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .placeholder {
@@ -590,13 +578,16 @@ body.theme-light .reader-toolbar {
 
 .viewer-word {
   display: inline;
-  padding: 0.08rem 0.16rem;
-  border-radius: 0.35rem;
-  transition: background 120ms ease, color 120ms ease;
+  padding: 0.1rem 0.2rem;
+  border-radius: 0.45rem;
+  transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
 .viewer-word.is-active {
-  background: var(--highlight);
+  background: linear-gradient(135deg, var(--accent-warm), var(--accent));
+  color: #071512;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
+  font-weight: 700;
 }
 
 @media (max-width: 960px) {

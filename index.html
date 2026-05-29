@@ -19,8 +19,8 @@
     <main class="shell">
       <section class="hero">
         <div>
-          <p class="eyebrow">Document to Speech Studio</p>
-          <h1>Upload a document, turn it into text, and listen with precision.</h1>
+          <p class="eyebrow">Text to Speech Studio</p>
+          <h1>Paste text, listen with precision, and come back where you left off.</h1>
         </div>
 
         <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle theme">
@@ -32,26 +32,13 @@
       <section class="layout">
         <aside class="panel upload-panel">
           <div class="panel-header">
-            <h2>Import</h2>
-            <p>Supports PDF, DOCX, TXT, HTML, MD, and other text-based files.</p>
-          </div>
-
-          <label id="dropzone" class="dropzone" for="fileInput">
-            <input id="fileInput" type="file" accept=".pdf,.doc,.docx,.txt,.rtf,.odt,.md,.html,.htm" />
-            <span class="dropzone-badge">Drop file</span>
-            <strong>Select a document</strong>
-            <span>or drag it here to extract readable text</span>
-          </label>
-
-          <div class="action-row">
-            <button id="convertBtn" class="control delete-btn" type="button" disabled>Convert to text</button>
+            <h2>Paste Text</h2>
           </div>
 
           <div class="paste-card">
             <div class="paste-header">
               <div>
                 <p class="meta-label">Paste text</p>
-                <p class="paste-copy">Paste plain text by default. Turn on HTML mode only when you want HTML rendered.</p>
               </div>
               <div class="paste-actions">
                 <button id="pasteBtn" class="control paste-btn" type="button">Read pasted text</button>
@@ -66,14 +53,10 @@
               type="text"
               placeholder="Optional saved title, for example Week 3 notes"
             />
-            <label class="html-toggle">
-              <input id="htmlModeToggle" type="checkbox" />
-              <span>Use HTML mode</span>
-            </label>
             <textarea
               id="pasteInput"
               class="paste-input"
-              placeholder="Paste plain text here. Turn on HTML mode if you want tags rendered."
+              placeholder="Paste plain text here."
             ></textarea>
           </div>
 
@@ -91,7 +74,7 @@
 
           <div class="meta-card">
             <div>
-              <p class="meta-label">Current file</p>
+              <p class="meta-label">Current text</p>
               <p id="fileName" class="meta-value">None loaded</p>
             </div>
             <div>
@@ -112,9 +95,9 @@
           <div class="tips-card">
             <p class="meta-label">Tips</p>
             <ul>
-              <li>PDF text is extracted in-browser.</li>
-              <li>DOCX files are converted to readable plain text.</li>
-              <li>Older `.doc` files may need saving as `.docx` first.</li>
+              <li>Paste text directly from notes, articles, or documents.</li>
+              <li>Save pasted text and reopen it later from the same spot.</li>
+              <li>Use Explain or Summarize before pressing Play if you want a simpler version.</li>
             </ul>
           </div>
         </aside>
@@ -231,7 +214,6 @@
       </section>
     </main>
 
-    <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>
