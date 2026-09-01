@@ -35,9 +35,14 @@ const fontSizeValue = document.getElementById("fontSizeValue");
 const toggleToolbarBtn = document.getElementById("toggleToolbarBtn");
 const focusModeBtn = document.getElementById("focusModeBtn");
 const recenterBtn = document.getElementById("recenterBtn");
+const pdfDropzone = document.getElementById("pdfDropzone");
+const pdfFileInput = document.getElementById("pdfFileInput");
+const pdfDropzoneBadge = document.getElementById("pdfDropzoneBadge");
 
 const SAVED_TEXTS_KEY = "echo-reader-saved-texts";
 const READER_PREFERENCES_KEY = "echo-reader-preferences";
+const THEME_COLORS = { "theme-dark": "#061226", "theme-light": "#f4efe6" };
+const themeColorMeta = document.querySelector('meta[name="theme-color"]');
 
 let currentText = "";
 let chunks = [];
@@ -56,6 +61,7 @@ let savedTexts = loadSavedTexts();
 let readerPreferences = loadReaderPreferences();
 let scrollAnimationFrame = 0;
 let targetViewerScrollTop = 0;
+let wordTrackingTimer = 0;
 
 applySavedPreferences();
 populateVoices();
@@ -147,6 +153,31 @@ savePasteBtn.addEventListener("click", () => {
   updateStatus("Pasted text saved. You can reopen it later and keep your place.");
 });
 
+pdfFileInput.addEventListener("change", () => {
+  const file = pdfFileInput.files && pdfFileInput.files[0];
+  if (file) {
+    handlePdfFile(file);
+  }
+});
+
+pdfDropzone.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  pdfDropzone.classList.add("is-dragover");
+});
+
+pdfDropzone.addEventListener("dragleave", () => {
+  pdfDropzone.classList.remove("is-dragover");
+});
+
+pdfDropzone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  pdfDropzone.classList.remove("is-dragover");
+  const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+  if (file) {
+    handlePdfFile(file);
+  }
+});
+
 speedRange.addEventListener("input", () => {
   speedValue.textContent = `${Number(speedRange.value).toFixed(1)}x`;
   saveReaderPreference("speed", speedRange.value);
@@ -199,6 +230,7 @@ themeToggle.addEventListener("click", () => {
   body.classList.remove("theme-dark", "theme-light");
   body.classList.add(nextTheme);
   themeLabel.textContent = nextTheme === "theme-dark" ? "Dark Mode" : "Light Mode";
+  applyThemeColor(nextTheme);
   saveReaderPreference("theme", nextTheme);
 });
 
@@ -231,6 +263,12 @@ function updateStatus(message) {
   statusText.textContent = message;
 }
 
+function applyThemeColor(theme) {
+  if (themeColorMeta) {
+    themeColorMeta.setAttribute("content", THEME_COLORS[theme] || THEME_COLORS["theme-dark"]);
+  }
+}
+
 function loadPastedContent(mode) {
   const raw = pasteInput.value.trim();
   if (!raw) {
@@ -258,6 +296,177 @@ function loadPastedContent(mode) {
     savedDocumentId: ""
   });
   updateStatus(statusMap[mode] || "Pasted text loaded.");
+}
+
+let pdfjsLibPromise = null;
+
+function loadPdfJs() {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = import("./vendor/pdf.min.js")
+      .then((lib) => {
+        lib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.js";
+        return lib;
+      })
+      .catch((error) => {
+        pdfjsLibPromise = null;
+        console.error("Failed to load vendor/pdf.min.js.", error);
+        const wrapped = new Error(
+          "Could not load the PDF engine (vendor/pdf.min.js). Check your local server is serving the vendor/ folder correctly, or try a different browser."
+        );
+        wrapped.code = "PDF_ENGINE_LOAD_FAILED";
+        wrapped.cause = error;
+        throw wrapped;
+      });
+  }
+  return pdfjsLibPromise;
+}
+
+let tesseractPromise = null;
+
+function loadTesseract() {
+  if (!tesseractPromise) {
+    tesseractPromise = import("./vendor/tesseract.esm.min.js")
+      .then((mod) => mod.default || mod)
+      .catch((error) => {
+        tesseractPromise = null;
+        console.error("Failed to load vendor/tesseract.esm.min.js.", error);
+        const wrapped = new Error(
+          "Could not load the offline OCR engine (vendor/tesseract.esm.min.js). If you opened this file directly by double-clicking it, open it through a local web server instead."
+        );
+        wrapped.code = "OCR_ENGINE_LOAD_FAILED";
+        wrapped.cause = error;
+        throw wrapped;
+      });
+  }
+  return tesseractPromise;
+}
+
+function setUploadBusy(isBusy) {
+  pdfDropzone.classList.toggle("is-busy", isBusy);
+  pdfFileInput.disabled = isBusy;
+  if (pdfDropzoneBadge) {
+    pdfDropzoneBadge.textContent = isBusy ? "Converting..." : "PDF \u2192 Text";
+  }
+}
+
+function stripExtension(name) {
+  return name.replace(/\.[^./\\]+$/, "");
+}
+
+async function createOcrWorker() {
+  const Tesseract = await loadTesseract();
+  return Tesseract.createWorker("eng", 1, {
+    workerPath: "./vendor/worker.min.js",
+    corePath: "./vendor/tesseract-core",
+    langPath: "./vendor/tessdata",
+    gzip: true
+  });
+}
+
+async function ocrPage(page, worker) {
+  const viewport = page.getViewport({ scale: 2 });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.ceil(viewport.width));
+  canvas.height = Math.max(1, Math.ceil(viewport.height));
+  const context = canvas.getContext("2d");
+  await page.render({ canvasContext: context, viewport }).promise;
+  const { data } = await worker.recognize(canvas);
+  return data && data.text ? data.text.trim() : "";
+}
+
+async function extractPdfText(file, onProgress) {
+  const pdfjsLib = await loadPdfJs();
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pageTexts = [];
+  let ocrWorker = null;
+  let ocrPagesUsed = 0;
+
+  try {
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+      onProgress(`Reading page ${pageNum} of ${pdf.numPages}...`);
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      let pageText = textContent.items
+        .map((item) => (typeof item.str === "string" ? item.str : ""))
+        .join(" ")
+        .replace(/[ \t]+/g, " ")
+        .trim();
+
+      if (pageText.length < 8) {
+        if (!ocrWorker) {
+          onProgress("Some pages look scanned. Loading offline OCR (first time only)...");
+          ocrWorker = await createOcrWorker();
+        }
+        onProgress(`Running OCR on page ${pageNum} of ${pdf.numPages}...`);
+        pageText = await ocrPage(page, ocrWorker);
+        ocrPagesUsed += 1;
+      }
+
+      pageTexts.push(pageText);
+    }
+  } finally {
+    if (ocrWorker) {
+      await ocrWorker.terminate();
+    }
+  }
+
+  return { text: pageTexts.join("\n\n"), pageCount: pdf.numPages, ocrPagesUsed };
+}
+
+async function handlePdfFile(file) {
+  if (!file) {
+    return;
+  }
+
+  const looksLikePdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+  if (!looksLikePdf) {
+    updateStatus("Please choose a PDF file to convert.");
+    return;
+  }
+
+  setUploadBusy(true);
+  updateStatus(`Opening "${file.name}"...`);
+
+  try {
+    const { text, pageCount, ocrPagesUsed } = await extractPdfText(file, updateStatus);
+    const cleaned = cleanText(text);
+
+    if (!cleaned) {
+      clearReader("No readable text could be extracted from that PDF.");
+      updateStatus(`Could not find readable text in "${file.name}".`);
+      return;
+    }
+
+    pasteInput.value = cleaned;
+    pasteTitleInput.value = stripExtension(file.name);
+    stopReading();
+    setDocumentText(cleaned, {
+      sourceType: "pdf",
+      sourceLabel: file.name,
+      savedDocumentId: ""
+    });
+
+    const pageSummary = `${pageCount} page${pageCount === 1 ? "" : "s"}`;
+    updateStatus(
+      ocrPagesUsed
+        ? `Converted "${file.name}" (${pageSummary}, OCR used on ${ocrPagesUsed}). Press Play to listen, or save it below.`
+        : `Converted "${file.name}" (${pageSummary}) to text. Press Play to listen, or save it below.`
+    );
+  } catch (error) {
+    console.error("PDF conversion failed.", error);
+    if (error && error.name === "PasswordException") {
+      updateStatus(`"${file.name}" is password protected, so it can't be opened here.`);
+    } else if (error && (error.code === "PDF_ENGINE_LOAD_FAILED" || error.code === "OCR_ENGINE_LOAD_FAILED")) {
+      updateStatus(error.message);
+    } else {
+      const detail = error && error.message ? error.message : String(error);
+      updateStatus(`Could not convert "${file.name}": ${detail}`);
+    }
+  } finally {
+    setUploadBusy(false);
+    pdfFileInput.value = "";
+  }
 }
 
 function loadReaderPreferences() {
@@ -291,6 +500,7 @@ function applySavedPreferences() {
     document.body.classList.add(theme);
     themeLabel.textContent = theme === "theme-dark" ? "Dark Mode" : "Light Mode";
   }
+  applyThemeColor(document.body.classList.contains("theme-light") ? "theme-light" : "theme-dark");
 
   if (readerPreferences.speed) {
     speedRange.value = String(readerPreferences.speed);
@@ -393,7 +603,8 @@ function speakFromPosition(chunkIndex, wordIndex) {
 
   const words = getChunkWords(chunks[chunkIndex]);
   const safeWordIndex = Math.min(Math.max(wordIndex, 0), Math.max(words.length - 1, 0));
-  const segment = words.slice(safeWordIndex).join("");
+  const segmentWords = words.slice(safeWordIndex);
+  const segment = segmentWords.join("");
 
   if (!segment.trim()) {
     playbackChunkIndex = chunkIndex + 1;
@@ -420,19 +631,18 @@ function speakFromPosition(chunkIndex, wordIndex) {
     utterance.lang = "en-US";
   }
 
+  startWordTracking(chunkIndex, safeWordIndex, segmentWords);
+
   utterance.onboundary = (event) => {
     if (event.name === "word" || event.charIndex >= 0) {
       const relativeWordIndex = getWordIndexFromCharIndex(segment, event.charIndex);
       const actualWordIndex = safeWordIndex + relativeWordIndex;
-      playbackChunkIndex = chunkIndex;
-      playbackWordIndex = actualWordIndex;
-      highlightChunk(chunkIndex, actualWordIndex);
-      updateProgress(calculateProgressFromPosition(chunkIndex, actualWordIndex));
-      persistSavedProgress();
+      syncWordTracking(chunkIndex, actualWordIndex);
     }
   };
 
   utterance.onend = () => {
+    stopWordTracking();
     if (!isPaused) {
       playbackChunkIndex = chunkIndex + 1;
       playbackWordIndex = 0;
@@ -442,6 +652,7 @@ function speakFromPosition(chunkIndex, wordIndex) {
   };
 
   utterance.onerror = () => {
+    stopWordTracking();
     isReading = false;
     persistSavedProgress();
     updateStatus("Speech playback hit an error. Try another browser voice.");
@@ -478,6 +689,7 @@ function updateProgress(percent) {
 
 function stopReading() {
   speechSynthesis.cancel();
+  stopWordTracking();
   isPaused = false;
   isReading = false;
   const nodes = textViewer.querySelectorAll(".viewer-line");
@@ -492,6 +704,44 @@ function stopReading() {
     chunkValue.textContent = "0 / 0";
   }
   persistSavedProgress();
+}
+
+function startWordTracking(chunkIndex, startWordIndex, words) {
+  stopWordTracking();
+
+  const rate = Number(speedRange.value) || 1;
+  const baseWordsPerMinute = 170;
+  const intervalMs = Math.max(90, Math.round((60000 / (baseWordsPerMinute * rate)) * 0.92));
+  let relativeWordIndex = 0;
+
+  wordTrackingTimer = window.setInterval(() => {
+    relativeWordIndex += 1;
+    if (relativeWordIndex >= words.length) {
+      stopWordTracking();
+      return;
+    }
+
+    syncWordTracking(chunkIndex, startWordIndex + relativeWordIndex);
+  }, intervalMs);
+}
+
+function syncWordTracking(chunkIndex, actualWordIndex) {
+  if (playbackChunkIndex === chunkIndex && playbackWordIndex === actualWordIndex) {
+    return;
+  }
+
+  playbackChunkIndex = chunkIndex;
+  playbackWordIndex = actualWordIndex;
+  highlightChunk(chunkIndex, actualWordIndex);
+  updateProgress(calculateProgressFromPosition(chunkIndex, actualWordIndex));
+  persistSavedProgress();
+}
+
+function stopWordTracking() {
+  if (wordTrackingTimer) {
+    window.clearInterval(wordTrackingTimer);
+    wordTrackingTimer = 0;
+  }
 }
 
 function escapeHtml(value) {

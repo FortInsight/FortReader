@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" id="themeColorMeta" content="#061226" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>EchoReader</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -20,7 +22,6 @@
       <section class="hero">
         <div>
           <p class="eyebrow">Text to Speech Studio</p>
-          <h1>Paste text, listen with precision, and come back where you left off.</h1>
         </div>
 
         <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle theme">
@@ -32,7 +33,19 @@
       <section class="layout">
         <aside class="panel upload-panel">
           <div class="panel-header">
-            <h2>Paste Text</h2>
+            <h2>Add a document</h2>
+          </div>
+
+          <div id="pdfDropzone" class="dropzone">
+            <span class="dropzone-badge" id="pdfDropzoneBadge">PDF &rarr; Text</span>
+            <strong>Drop a PDF here, or tap to choose a file</strong>
+            <span>Scanned pages convert automatically with on-device OCR. Nothing leaves your browser.</span>
+            <input
+              id="pdfFileInput"
+              type="file"
+              accept="application/pdf,.pdf"
+              aria-label="Upload a PDF to convert to text"
+            />
           </div>
 
           <div class="paste-card">
@@ -89,12 +102,13 @@
 
           <div class="status-card">
             <p class="meta-label">Status</p>
-            <p id="statusText" class="status-text">Waiting for a document.</p>
+            <p id="statusText" class="status-text" aria-live="polite">Waiting for a document.</p>
           </div>
 
           <div class="tips-card">
             <p class="meta-label">Tips</p>
             <ul>
+              <li>Drop in a PDF to convert it to text automatically, even scanned pages.</li>
               <li>Paste text directly from notes, articles, or documents.</li>
               <li>Save pasted text and reopen it later from the same spot.</li>
               <li>Use Explain or Summarize before pressing Play if you want a simpler version.</li>
